@@ -1,0 +1,20 @@
+[chains.polygon]
+chain_id = 137
+rpc_url_env = "POLYGON_WS_RPC_URL"
+
+# Optional. OrderFilled events are filtered by indexed maker when set.
+wallets = []
+
+[[chains.polygon.contracts]]
+address = "0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e"
+source = "POLYMARKET"
+contract_version = "V1"
+exchange_type = "STANDARD"
+abi = "abis/CTFExchangeV1.json"
+
+[[chains.polygon.contracts]]
+address = "0xe111180000d2663c0091e4f400237545b87b996b"
+source = "POLYMARKET"
+contract_version = "V2"
+exchange_type = "STANDARD"
+abi = "abis/CTFExchangeV2.json"
