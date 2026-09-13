@@ -1,0 +1,19 @@
+version: 1
+
+chains:
+  ethereum:
+    id: 1
+    rpc: "${ETHEREUM_WS_RPC_URL}"
+
+sources:
+  - name: uniswap-v4
+    abi: ./abis/IPoolManager.json
+    deployments:
+      ethereum:
+        addresses:
+          - "0x000000000004444c5dc75cB358380D2e3dE08A90"
+    events:
+      - name: Swap
+        # V4 pools share PoolManager; indexed pool ID selects one pool.
+        match:
+          - id: ["${UNISWAP_V4_POOL_ID}"]

@@ -1,0 +1,22 @@
+version: 1
+
+chains:
+  polygon:
+    id: 137
+    rpc: "${POLYGON_WS_RPC_URL}"
+
+sources:
+  - name: polymarket
+    abi: ./abis/CTFExchangeV2.json
+    deployments:
+      polygon:
+        addresses:
+          # Public Polymarket CTF Exchange and Neg Risk CTF Exchange.
+          - "0xE111180000d2663C0091e4f400237545B87B996B"
+          - "0xe2222d279d744050d28e00520010520000310F59"
+    events:
+      - name: OrderFilled
+        # Match clauses are OR: fills made or taken by this public caller input.
+        match:
+          - maker: ["${WATCHED_ADDRESS}"]
+          - taker: ["${WATCHED_ADDRESS}"]
