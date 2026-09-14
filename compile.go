@@ -161,6 +161,16 @@ func compileEvents(source Source) ([]compiledEvent, error) {
 		if definition.Anonymous {
 			return nil, fmt.Errorf("source %q event %q: anonymous events are not supported", source.Name, configured.Name)
 		}
+		inputNames := make(map[string]struct{}, len(definition.Inputs))
+		for _, input := range definition.Inputs {
+			if input.Name == "" {
+				return nil, fmt.Errorf("source %q event %q: unnamed inputs are not supported", source.Name, configured.Name)
+			}
+			if _, exists := inputNames[input.Name]; exists {
+				return nil, fmt.Errorf("source %q event %q: duplicate input name %q", source.Name, configured.Name, input.Name)
+			}
+			inputNames[input.Name] = struct{}{}
+		}
 		clauses, err := compileMatches(definition, configured.Match)
 		if err != nil {
 			return nil, fmt.Errorf("source %q event %q: %w", source.Name, configured.Name, err)
@@ -320,11 +330,18 @@ func convertMatchValue(valueType abi.Type, raw any) (any, error) {
 		}
 		return common.HexToAddress(value), nil
 	case abi.BoolTy:
-		value, ok := raw.(bool)
-		if !ok {
+		switch value := raw.(type) {
+		case bool:
+			return value, nil
+		case string:
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return nil, fmt.Errorf("expected boolean, got %q", value)
+			}
+			return parsed, nil
+		default:
 			return nil, fmt.Errorf("expected boolean, got %T", raw)
 		}
-		return value, nil
 	case abi.StringTy:
 		value, ok := raw.(string)
 		if !ok {

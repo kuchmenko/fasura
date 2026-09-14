@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -14,6 +15,7 @@ import (
 )
 
 type rpcClient interface {
+	ChainID(context.Context) (*big.Int, error)
 	SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error)
 	Close()
 }
@@ -49,6 +51,16 @@ func (app *App) Run(ctx context.Context) error {
 				return fmt.Errorf("connect to chain %q: %w", chain.name, err)
 			}
 			defer client.Close()
+			chainID, err := client.ChainID(groupCtx)
+			if err != nil {
+				if groupCtx.Err() != nil && errors.Is(err, groupCtx.Err()) {
+					return nil
+				}
+				return fmt.Errorf("read chain ID for chain %q: %w", chain.name, err)
+			}
+			if chainID.Cmp(new(big.Int).SetUint64(chain.id)) != 0 {
+				return fmt.Errorf("chain %q id is %s, want %d", chain.name, chainID, chain.id)
+			}
 			return runChain(groupCtx, client, chain, handlers, all)
 		})
 	}
@@ -91,6 +103,9 @@ func runStream(ctx context.Context, client rpcClient, stream compiledStream, han
 		if err != nil {
 			for _, active := range subscriptions {
 				active.Unsubscribe()
+			}
+			if streamCtx.Err() != nil && errors.Is(err, streamCtx.Err()) {
+				return nil
 			}
 			return fmt.Errorf("subscribe to %s on chain %q query %d: %w", stream.source+"."+stream.event.Name, stream.chainName, index, err)
 		}

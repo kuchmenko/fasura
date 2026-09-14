@@ -88,6 +88,68 @@ func TestCompileConfigRejectsUnknownDeploymentChain(t *testing.T) {
 	}
 }
 
+func TestCompileConfigRejectsEventInputsThatCannotBeDecodedByName(t *testing.T) {
+	t.Parallel()
+
+	unnamedABI := mustABI(t, `[{"anonymous":false,"inputs":[{"indexed":true,"name":"value","type":"address"}],"name":"Changed","type":"event"}]`)
+	unnamedEvent := unnamedABI.Events["Changed"]
+	unnamedEvent.Inputs[0].Name = ""
+	unnamedABI.Events["Changed"] = unnamedEvent
+
+	tests := []struct {
+		name string
+		abi  abi.ABI
+		want string
+	}{
+		{
+			name: "unnamed",
+			abi:  unnamedABI,
+			want: "unnamed input",
+		},
+		{
+			name: "duplicate",
+			abi:  mustABI(t, `[{"anonymous":false,"inputs":[{"indexed":true,"name":"value","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Changed","type":"event"}]`),
+			want: `duplicate input name "value"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := compileConfig(Config{
+				Chains: map[string]Chain{"ethereum": {ID: 1, RPCURL: "ws://example.test"}},
+				Sources: []Source{{
+					Name:        "contract",
+					ABI:         test.abi,
+					Deployments: map[string]Deployment{"ethereum": {Addresses: []common.Address{common.HexToAddress("0x1")}}},
+					Events:      []EventConfig{{Name: "Changed"}},
+				}},
+			})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestConvertMatchValueParsesBooleanStrings(t *testing.T) {
+	t.Parallel()
+
+	contractABI := mustABI(t, `[{"anonymous":false,"inputs":[{"indexed":true,"name":"enabled","type":"bool"}],"name":"Changed","type":"event"}]`)
+	boolType := contractABI.Events["Changed"].Inputs[0].Type
+	for _, raw := range []string{"true", "false"} {
+		got, err := convertMatchValue(boolType, raw)
+		if err != nil {
+			t.Fatalf("convert %q: %v", raw, err)
+		}
+		if got != (raw == "true") {
+			t.Fatalf("convert %q = %v", raw, got)
+		}
+	}
+	if _, err := convertMatchValue(boolType, "not-a-boolean"); err == nil {
+		t.Fatal("invalid boolean string accepted")
+	}
+}
+
 func mustABI(t *testing.T, definition string) abi.ABI {
 	t.Helper()
 	contractABI, err := abi.JSON(strings.NewReader(definition))

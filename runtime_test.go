@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/big"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -102,6 +103,50 @@ func TestAppRunAlreadyCanceledDoesNotDial(t *testing.T) {
 	}
 }
 
+func TestAppRunRejectsRPCForWrongChain(t *testing.T) {
+	t.Parallel()
+
+	app, err := New(Config{
+		Chains: map[string]Chain{"ethereum": {ID: 1, RPCURL: "ws://polygon.example"}},
+		Sources: []Source{{
+			Name:        "token",
+			ABI:         mustABI(t, transferABIJSON),
+			Deployments: map[string]Deployment{"ethereum": {Addresses: []common.Address{common.HexToAddress("0x1")}}},
+			Events:      []EventConfig{{Name: "Transfer"}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.HandleAll(func(context.Context, Event) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	app.dial = func(context.Context, string) (rpcClient, error) {
+		return chainIDClient{id: big.NewInt(137)}, nil
+	}
+	err = app.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `chain "ethereum" id is 137, want 1`) {
+		t.Fatalf("Run error = %v, want chain ID mismatch", err)
+	}
+}
+
+func TestRunStreamTreatsSubscriptionSetupCancellationAsCleanShutdown(t *testing.T) {
+	t.Parallel()
+
+	contractABI := mustABI(t, transferABIJSON)
+	stream := mustCompiledStream(
+		t,
+		contractABI,
+		common.HexToAddress("0x1000000000000000000000000000000000000001"),
+		common.HexToAddress("0x2000000000000000000000000000000000000002"),
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	client := cancelOnSubscribeClient{cancel: cancel}
+	if err := runStream(ctx, client, stream, nil, nil); err != nil {
+		t.Fatalf("runStream error = %v, want nil", err)
+	}
+}
+
 func TestAppRequiresHandlerForEveryConfiguredEvent(t *testing.T) {
 	t.Parallel()
 
@@ -184,7 +229,41 @@ func (client *fakeClient) SubscribeFilterLogs(_ context.Context, _ ethereum.Filt
 	return subscription, nil
 }
 
+func (client *fakeClient) ChainID(context.Context) (*big.Int, error) {
+	return big.NewInt(1), nil
+}
+
 func (client *fakeClient) Close() {}
+
+type chainIDClient struct {
+	id *big.Int
+}
+
+func (client chainIDClient) ChainID(context.Context) (*big.Int, error) {
+	return client.id, nil
+}
+
+func (chainIDClient) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
+	return nil, errors.New("unexpected subscription")
+}
+
+func (chainIDClient) Close() {}
+
+type cancelOnSubscribeClient struct {
+	cancel context.CancelFunc
+}
+
+func (client cancelOnSubscribeClient) ChainID(context.Context) (*big.Int, error) {
+	return big.NewInt(1), nil
+}
+
+func (client cancelOnSubscribeClient) SubscribeFilterLogs(ctx context.Context, _ ethereum.FilterQuery, _ chan<- types.Log) (ethereum.Subscription, error) {
+	client.cancel()
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (cancelOnSubscribeClient) Close() {}
 
 func (client *fakeClient) waitForSubscriptions(t *testing.T) {
 	t.Helper()

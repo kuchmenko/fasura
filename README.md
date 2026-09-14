@@ -131,7 +131,7 @@ uses blocking delivery; the caller controls its channel buffer and consumer.
 Copy `.env.example` to `.env`, replace placeholders, then run an example:
 
 ```sh
-go run ./examples/ctf -config examples/ctf/fasura.yaml
+just run
 ```
 
 Each example keeps its ABI files beside its YAML and application.
